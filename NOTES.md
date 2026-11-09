@@ -73,3 +73,53 @@ The AppBar's Undo button and the `BlocListener` are above `CartBody` and could n
 | `BlocListener` | `ref.listen` |
 | `context.read` | `ref.read` |
 | `buildWhen` | `select` |
+
+## Part 5: Bloc
+
+**T2: what extra information does the transition log give?** `onTransition` shows current state, the event and next state. The Cubit's `onChange` shows only current and next, so you can see what changed but not why.
+
+**T4: droppable.** With `droppable()`, taps made while the first checkout runs are discarded, so the API is called once. A plain Cubit would start a new `checkout()` per call, so it needs the manual `if (state.isSubmitting) return;` guard. Note that bloc's default transformer is concurrent, not sequential: without `droppable()`, three taps would start three API calls.
+
+**T5: which events are undoable?** `CartProductAdded`, `CartProductRemoved`, `CartQtyChanged` and `CartCouponApplied` change what the user is editing, so they are undoable. `CartCheckoutRequested` is a real-world action that cannot be taken back, and recording `CartUndone` would make undo undo itself. The exhaustive `switch` in `_isUndoable` means a new event will not compile until it is classified.
+
+**When is the event layer worth its boilerplate?**
+Clearly better than Cubit: checkout, where one `transformer: droppable()` replaces a hand-written guard and every attempt is a named event in the log. Pure overhead: the quantity stepper, where the event class only forwards two arguments to a pure helper.
+
+**Which styles implement "drop duplicate taps" declaratively?**
+Only Bloc, through the transformer. In setState, Riverpod and Cubit it is imperative: `if (state.isSubmitting) return;` at the top of `checkout`, plus disabling the button.
+
+## Checkpoint questions
+
+**1. Where state lives and when it dies.**
+- setState: in the `State` object; dies when the page leaves the tree.
+- Riverpod: in the `ProviderContainer` under the root `ProviderScope`; dies with the app, or when the last listener leaves if `autoDispose`.
+- Cubit: in the instance owned by `BlocProvider`; dies when that provider is disposed (here, when the page is popped).
+- Bloc: same as Cubit.
+
+**2. The single public mutation API.**
+Riverpod's `Notifier`: its public methods, because `state` is only assigned inside the notifier. Cubit: its public methods, which call the protected `emit`. Bloc: `add(event)`. `setState` has none, since the state is private to the `State` object.
+
+**3. Mapping.**
+`ref.watch` = `BlocBuilder`, `ref.read` = `context.read`, `ref.listen` = `BlocListener`. `setState` fits none of them cleanly: it is the mutation and the rebuild trigger in one call, with the whole `build` acting as the "watch" and side effects written directly after the await.
+
+**4. Why skip when new `==` old, and what must `CartState` do?**
+Equal state means the UI would produce the same output, so notifying wastes rebuilds and can repeat side effects. `CartState` must be immutable, with a new instance for each change, and must have value-based `==` and `hashCode` that compare list contents.
+
+**5. Guards after the await.**
+- setState: `mounted`, because the `State` is disposed with the widget and `setState` then throws.
+- Riverpod: nothing, because the notifier outlives the page.
+- Cubit: `isClosed`, because `BlocProvider` closes it on dispose and `emit` then throws.
+- Bloc: `emit.isDone`, because `emit` is scoped to one handler, and the bloc closing ends that handler.
+
+They differ because each guard checks the lifetime of whatever owns the state.
+
+## Comparison table
+
+Non-blank, non-comment lines in each style's own folder and test file. All four also share 391 lines of model, service and widgets. Cubit and Bloc share a further 16-line `BlocSummaryCard`.
+
+| Style | Code T1–T5 | Test code | Files (incl. test) | Strength | Weakness |
+|---|---|---|---|---|---|
+| setState | 73 | 16 | 2 | No library, fewest concepts | State is trapped in one widget; tests must go through the UI |
+| Riverpod | 93 | 36 | 3 | State outlives the page; `select` gives precise rebuilds; widget-free tests | `read` / `watch` / `listen` rules are easy to misuse |
+| Cubit | 87 | 57 | 3 | Simple methods; `blocTest` checks exact state sequences | A getter on the cubit is not observable, so everything the UI needs must be in the state |
+| Bloc | 142 | 74 | 4 | Named events, full transition log, declarative concurrency | Most boilerplate; an event class per small action |
