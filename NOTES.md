@@ -50,3 +50,26 @@ Riverpod 3 filters updates with `==`. Without an override, `copyWith` returns a 
 
 **Why does the summary card rebuild less often than the setState version?**
 In the setState version every `setState` rebuilds the page and creates a new `SummaryCard`. The Riverpod card has its own subscription narrowed by `select`, so it only rebuilds when the selected values change.
+
+## Part 4: Cubit
+
+**T2: dropped emit.** `BlocBase.emit` ignores a state equal to the current one. On a second identical coupon `_commit` prints "identical state, emit dropped" and `onChange` does not fire. A `blocTest` also asserts this.
+
+**T4: `emit` after `close()`.** It throws a `StateError`, which is why `checkout()` checks `isClosed` after the await.
+
+**T5: why a getter fails.** `BlocBuilder` only rebuilds on emitted states, and a getter on the cubit emits nothing. So history is part of `CartState` and `canUndo` is a getter on the state, which every emit carries.
+
+**T6: comparison with Riverpod.** The Riverpod test asserts only the end state. `blocTest` asserts the whole sequence, so a missing or extra intermediate state fails the test.
+
+**What would break if `BlocProvider` were inside `CartBody`?**
+The AppBar's Undo button and the `BlocListener` are above `CartBody` and could not find the cubit, giving a `ProviderNotFoundException`. `CartBody` would also stop being style-independent and could not be shared.
+
+**Riverpod equivalents.**
+
+| flutter_bloc | Riverpod |
+|---|---|
+| `BlocProvider` | `NotifierProvider` plus the root `ProviderScope` |
+| `BlocBuilder` | `ref.watch` (or `Consumer`) |
+| `BlocListener` | `ref.listen` |
+| `context.read` | `ref.read` |
+| `buildWhen` | `select` |
